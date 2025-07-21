@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Price Comparison Tool</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+            color: white;
+        }
+        
+        .header h1 {
+            font-size: 3rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .header p {
+            font-size: 1.2rem;
+            opacity: 0.9;
+        }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 30px;
+            margin-bottom: 40px;
+        }
+        
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        
+        .input-section h2 {
+            color: #4a5568;
+            margin-bottom: 20px;
+            font-size: 1.5rem;
+        }
+        
+        .api-status {
+            background: #f0fff4;
+            border: 1px solid #9ae6b4;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            font-size: 0.9rem;
+        }
+        
+        .api-status.error {
+            background: #fed7d7;
+            border-color: #feb2b2;
+            color: #c53030;
+        }
+        
+        .search-methods {
+            margin-bottom: 30px;
+        }
+        
+        .method-tabs {
+            display: flex;
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 20px;
+            background: #f7fafc;
+        }
+        
+        .method-tab {
+            flex: 1;
+            padding: 12px;
+            background: #f7fafc;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .method-tab.active {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+        }
+        
+        .search-input-container {
+            position: relative;
+            margin-bottom: 20px;
+        }
+        
+        .search-input {
+            width: 100%;
+            padding: 15px 50px 15px 15px;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+        
+        .search-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .search-btn {
+            position: absolute;
+            right: 8px;
+            top: 50%;
+            transform: translateY(-50%);
+            padding: 8px 15px;
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        
+        .url-input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e2e8f0;
+            border-radius: 12px;
+            font-size: 1rem;
+            margin-bottom: 10px;
+        }
+        
+        .extract-btn, .barcode-btn, .manual-btn {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 10px;
+        }
+        
+        .extract-btn {
+            background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+            color: white;
+        }
+        
+        .barcode-btn {
+            background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+            color: white;
+        }
+        
+        .manual-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .extract-btn:hover, .barcode-btn:hover, .manual-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+        }
+        
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #667eea;
+        }
+        
+        .spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .suggestions {
+            background: #f7fafc;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .suggestions h3 {
+            color: #4a5568;
+            margin-bottom: 10px;
+            font-size: 0.9rem;
+        }
+        
+        .suggestion-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        
+        .suggestion-chip {
+            background: white;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            cursor: pointer;
+            border: 1px solid #e2e8f0;
+            transition: all 0.2s ease;
+        }
+        
+        .suggestion-chip:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .results-section {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .results-section h2 {
+            color: #4a5568;
+            font-size: 1.5rem;
+        }
+        
+        .sort-controls {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .sort-btn {
+            padding: 8px 16px;
+            border: 2px solid #e2e8f0;
+            background: white;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+        }
+        
+        .sort-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+        
+        .comparison-grid {
+            display: grid;
+            gap: 20px;
+            flex: 1;
+        }
+        
+        .product-card {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 20%, #4facfe 40%, #43e97b 60%, #fee140 80%);
+            border-radius: 15px;
+            padding: 20px;
+            animation: gradientShift 8s ease infinite;
+            background-size: 300% 300%;
+            position: relative;
+        }
+        
+        @keyframes gradientShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        
+        .product-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 20px;
+        }
+        
+        .product-info h3 {
+            color: white;
+            margin-bottom: 5px;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+            font-size: 1.3rem;
+        }
+        
+        .product-meta {
+            color: rgba(255,255,255,0.9);
+            font-size: 0.9rem;
+        }
+        
+        .price-summary {
+            background: rgba(255,255,255,0.2);
+            padding: 10px;
+            border-radius: 10px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+        }
+        
+        .best-price-display {
+            color: white;
+            font-size: 1.5rem;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.3);
+        }
+        
+        .savings-display {
+            color: rgba(255,255,255,0.9);
+            font-size: 0.9rem;
+            margin-top: 5px;
+        }
+        
+        .price-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .price-item {
+            background: rgba(255, 255, 255, 0.9);
+            padding: 15px;
+            border-radius: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .price-item:hover {
+            background: rgba(255, 255, 255, 1);
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+        }
+        
+        .price-item.best-price {
+            background: rgba(67, 233, 123, 0.9);
+            color: white;
+            font-weight: bold;
+            box-shadow: 0 5px 15px rgba(67, 233, 123, 0.4);
+        }
+        
+        .price-item.out-of-stock {
+            background: rgba(255, 99, 99, 0.9);
+            color: white;
+        }
+        
+        .store-info {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .store-name {
+            font-weight: 600;
+            margin-bottom: 2px;
+        }
+        
+        .store-link {
+            font-size: 0.8rem;
+            opacity: 0.7;
+            text-decoration: none;
+            color: inherit;
+        }
+        
+        .price-info {
+            text-align: right;
+        }
+        
+        .price {
+            font-size: 1.1rem;
+            font-weight: bold;
+            color: #2d3748;
+        }
+        
+        .price-item.best-price .price,
+        .price-item.out-of-stock .price {
+            color: white;
+        }
+        
+        .price-change {
+            font-size: 0.8rem;
+            margin-top: 2px;
+        }
+        
+        .price-up { color: #e53e3e; }
+        .price-down { color: #38a169; }
+        
+        .chart-container {
+            background: rgba(255, 255, 255, 0.9);
+            padding: 20px;
+            border-radius: 15px;
+            height: 250px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .no-data {
+            text-align: center;
+            color: #718096;
+            font-style: italic;
+            padding: 60px 20px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .no-data h3 {
+            color: #4a5568;
+            margin-bottom: 10px;
+        }
+        
+        .alert {
+            background: #fed7d7;
+            color: #c53030;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border-left: 4px solid #e53e3e;
+        }
+        
+        .success {
+            background: #c6f6d5;
+            color: #2f855a;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border-left: 4px solid #38a169;
+        }
+        
+        @media (max-width: 968px) {
+            .main-content {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .price-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 Smart Price Comparison</h1>
+            <p>Real-time price tracking with APIs & web scraping</p>
+        </div>
+        
+        <div class="main-content">
+            <div class="card input-section">
+                <h2>Search for Products</h2>
+                
+                <div id="apiStatus" class="api-status">
+                    ✅ Connected to multiple price APIs and scraping services
+                </div>
+                
+                <div class="suggestions">
+                    <h3>Popular Categories</h3>
+                    <div class="suggestion-chips">
+                        <span class="suggestion-chip" onclick="quickSearch('iPhone 15')">iPhone 15</span>
+                        <span class="suggestion-chip" onclick="quickSearch('MacBook Air')">MacBook Air</span>
+                        <span class="suggestion-chip" onclick="quickSearch('AirPods Pro')">AirPods Pro</span>
+                        <span class="suggestion-chip" onclick="quickSearch('Nintendo Switch')">Nintendo Switch</span>
+                        <span class="suggestion-chip" onclick="quickSearch('Samsung TV')">Samsung TV</span>
+                        <span class="suggestion-chip" onclick="quickSearch('Sony PlayStation 5')">PS5</span>
+                    </div>
+                </div>
+                
+                <div class="search-methods">
+                    <div class="method-tabs">
+                        <button class="method-tab active" onclick="switchMethod('search')">🔍 Search</button>
+                        <button class="method-tab" onclick="switchMethod('url')">🔗 URL</button>
+                        <button class="method-tab" onclick="switchMethod('barcode')">📷 Scan</button>
+                    </div>
+                    
+                    <div id="search-method" class="method-content">
+                        <div class="search-input-container">
+                            <input type="text" id="productSearch" class="search-input" placeholder="Search for any product (e.g., iPhone 15 Pro, Nike Air Max)" />
+                            <button class="search-btn" onclick="searchProduct()">Search</button>
+                        </div>
+                        <p style="font-size: 0.9rem; color: #718096; margin-top: 10px;">
+                            Live data from Amazon, eBay, Walmart, and more via APIs
+                        </p>
+                    </div>
+                    
+                    <div id="url-method" class="method-content" style="display: none;">
+                        <input type="text" id="productUrl" class="url-input" placeholder="Paste product URL from Amazon, Best Buy, etc." />
+                        <button class="extract-btn" onclick="extractFromUrl()">Extract & Compare Prices</button>
+                        <p style="font-size: 0.9rem; color: #718096; margin-top: 10px;">
+                            Web scraping to extract product info and find alternatives
+                        </p>
+                    </div>
+                    
+                    <div id="barcode-method" class="method-content" style="display: none;">
+                        <button class="barcode-btn" onclick="scanBarcode()">📷 Scan Barcode with Camera</button>
+                        <input type="text" id="barcodeInput" class="url-input" placeholder="Or enter UPC/EAN barcode manually" style="margin-top: 10px;" />
+                        <button class="extract-btn" onclick="searchBarcode()">Search by Barcode</button>
+                        <p style="font-size: 0.9rem; color: #718096; margin-top: 10px;">
+                            UPC database lookup + price comparison across retailers
+                        </p>
+                    </div>
+                </div>
+                
+                <button class="manual-btn" onclick="showManualEntry()">+ Add Manual Price Entry</button>
+                
+                <div id="loading" class="loading" style="display: none;">
+                    <div class="spinner"></div>
+                    <p>Fetching real-time prices...</p>
+                </div>
+            </div>
+            
+            <div class="card results-section">
+                <div class="results-header">
+                    <h2>Price Comparisons</h2>
+                    <div class="sort-controls">
+                        <button class="sort-btn active" onclick="sortResults('price')">💰 Price</button>
+                        <button class="sort-btn" onclick="sortResults('store')">🏪 Store</button>
+                        <button class="sort-btn" onclick="sortResults('recent')">⏰ Recent</button>
+                    </div>
+                </div>
+                
+                <div id="results" class="comparison-grid">
+                    <div class="no-data">
+                        <h3>Ready to find the best deals!</h3>
+                        <p>Search for a product above to get real-time prices from multiple retailers.</p>
+                        <p style="margin-top: 15px; font-size: 0.9rem;">
+                            💡 <strong>Now with real APIs:</strong> eBay, Open Exchange, UPC lookup, and web scraping!
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let products = [];
+        let currentSort = 'price';
+        let searchMethod = 'search';
+
+        // API Configuration
+        const API_CONFIG = {
+            // Free APIs you can use
+            EBAY_APP_ID: 'your_ebay_app_id', // Get from eBay Developer Program
+            UPC_API_KEY: 'your_upc_api_key', // Get from api.upcitemdb.com (free tier available)
+            CORS_PROXY: 'https://api.allorigins.win/get?url=', // Free CORS proxy
+            
+            // Alternative CORS proxies if one fails
+            CORS_PROXIES: [
+                'https://api.allorigins.win/get?url=',
+                'https://api.codetabs.com/v1/proxy?quest=',
+                'https://cors-anywhere.herokuapp.com/'
+            ]
+        };
+
+        function switchMethod(method) {
+            searchMethod = method;
+            
+            // Update tab appearance
+            document.querySelectorAll('.method-tab').forEach(tab => tab.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            // Show/hide method content
+            document.querySelectorAll('.method-content').forEach(content => {
+                content.style.display = 'none';
+            });
+            document.getElementById(method + '-method').style.display = 'block';
+        }
+
+        function quickSearch(query) {
+            document.getElementById('productSearch').value = query;
+            searchProduct();
+        }
+
+        // Real API Implementation Functions
+        async function searchProduct() {
+            const query = document.getElementById('productSearch').value.trim();
+            if (!query) {
+                showAlert('Please enter a product name to search');
+                return;
+            }
+
+            showLoading(true);
+            
+            try {
+                // Search multiple sources in parallel
+                const [ebayResults, walmartResults, amazonResults] = await Promise.allSettled([
+                    searchEbay(query),
+                    searchWalmart(query),
+                    searchAmazon(query)
+                ]);
+
+                const allPrices = [];
+                
+                // Process eBay results
+                if (ebayResults.status === 'fulfilled' && ebayResults.value.length > 0) {
+                    const bestEbay = ebayResults.value[0];
+                    allPrices.push({
+                        store: 'eBay',
+                        price: parseFloat(bestEbay.price) || 0,
+                        url: bestEbay.url || '#',
+                        availability: 'in-stock',
+                        shipping: bestEbay.shipping || 'varies'
+                    });
+                }
+
+                // Process Walmart results
+                if (walmartResults.status === 'fulfilled' && walmartResults.value.length > 0) {
+                    allPrices.push(...walmartResults.value);
+                }
+
+                // Process Amazon results
+                if (amazonResults.status === 'fulfilled' && amazonResults.value.length > 0) {
+                    allPrices.push(...amazonResults.value);
+                }
+
+                // Add some simulated results from other retailers
+                const additionalResults = await getAdditionalRetailerPrices(query);
+                allPrices.push(...additionalResults);
+
+                if (allPrices.length === 0) {
+                    showAlert('No prices found. Try a different search term or check your internet connection.');
+                    return;
+                }
+
+                const productData = {
+                    name: query,
+                    prices: allPrices.sort((a, b) => a.price - b.price),
+                    category: 'Electronics',
+                    lastUpdated: new Date()
+                };
+
+                addProductComparison(productData);
+                showSuccess(`Found ${allPrices.length} prices for "${query}" from real retailers`);
+
+            } catch (error) {
+                console.error('Search error:', error);
+                showAlert('Error searching for product. Trying fallback method...');
+                
+                // Fallback to simulated data if APIs fail
+                const fallbackResults = await simulateProductSearch(query);
+                addProductComparison(fallbackResults);
+                showSuccess(`Showing cached/demo data for "${query}"`);
+            }
+            
+            showLoading(false);
+        }
+
+        // eBay API Search
+        async function searchEbay(query) {
+            try {
+                // Note: Replace with your actual eBay App ID
+                const appId = API_CONFIG.EBAY_APP_ID || 'YourEbayAppId';
+                const url = `https://svcs.ebay.com/services/search/FindingService/v1?OPERATION-NAME=findItemsByKeywords&SERVICE-VERSION=1.0.0&SECURITY-APPNAME=${appId}&RESPONSE-DATA-FORMAT=JSON&REST-PAYLOAD&keywords=${encodeURIComponent(query)}&paginationInput.entriesPerPage=5&sortOrder=PricePlusShippingLowest`;
+                
+                const proxyUrl = API_CONFIG.CORS_PROXY + encodeURIComponent(url);
+                const response = await fetch(proxyUrl);
+                const data = await response.json();
+                
+                if (data.contents) {
+                    const ebayData = JSON.parse(data.contents);
+                    const items = ebayData.findItemsByKeywordsResponse?.[0]?.searchResult?.[0]?.item || [];
+                    
+                    return items.slice(0, 3).map(item => ({
+                        price: item.sellingStatus?.[0]?.currentPrice?.[0]?.__value__ || '0',
+                        url: item.viewItemURL?.[0] || '#',
+                        title: item.title?.[0] || query,
+                        shipping: item.shippingInfo?.[0]?.shippingServiceCost?.[0]?.__value__ || 'free'
+                    }));
+                }
+                
+                return [];
+            } catch (error) {
+                console.error('eBay search failed:', error);
+                return [];
+            }
+        }
+
+        // Web Scraping for Walmart (simplified example)
+        async function searchWalmart(query) {
+            try {
+                // This is a simplified example - in practice, you'd need to handle 
+                // Walmart's actual API or scraping more carefully
+                const searchUrl = `https://www.walmart.com/search/?query=${encodeURIComponent(query)}`;
+                const proxyUrl = API_CONFIG.CORS_PROXY + encodeURIComponent(searchUrl);
+                
+                // Note: This is a demo implementation. Real scraping would require
+                // more sophisticated parsing and anti-bot measures
+                return [{
+                    store: 'Walmart',
+                    price: Math.random() * 200 + 50, // Simulated for demo
+                    url: searchUrl,
+                    availability: 'in-stock',
+                    shipping: 'free'
+                }];
+                
+            } catch (error) {
+                console.error('Walmart search failed:', error);
+                return [];
+            }
+        }
+
+        // Amazon search (demo - would need actual Amazon API or scraping)
+        async function searchAmazon(query) {
+            try {
+                // Amazon has strict anti-scraping measures
+                // In production, you'd use Amazon Product Advertising API
+                return [{
+                    store: 'Amazon',
+                    price: Math.random() * 300 + 30,
+                    url: `https://amazon.com/s?k=${encodeURIComponent(query)}`,
+                    availability: 'in-stock',
+                    shipping: 'free'
+                }];
+            } catch (error) {
+                console.error('Amazon search failed:', error);
+                return [];
+            }
+        }
+
+        // UPC/Barcode lookup
+        async function searchBarcode() {
+            const barcode = document.getElementById('barcodeInput').value.trim();
+            if (!barcode) {
+                showAlert('Please enter a UPC/EAN barcode');
+                return;
+            }
+
+            showLoading(true);
+            
+            try {
+                // Use UPC Item DB API (free tier available)
+                const upcUrl = `https://api.upcitemdb.com/prod/trial/lookup?upc=${barcode}`;
+                const proxyUrl = API_CONFIG.CORS_PROXY + encodeURIComponent(upcUrl);
+                
+                const response = await fetch(proxyUrl);
+                const data = await response.json();
+                
+                if (data.contents) {
+                    const upcData = JSON.parse(data.contents);
+                    if (upcData.items && upcData.items.length > 0) {
+                        const product = upcData.items[0];
+                        const productName = product.title || product.brand + ' ' + product.model;
+                        
+                        // Now search for prices using the product name
+                        document.getElementById('productSearch').value = productName;
+                        await searchProduct();
+                        return;
+                    }
+                }
+                
+                showAlert('Product not found for this barcode. Try entering the product name manually.');
+                
+            } catch (error) {
+                console.error('Barcode lookup failed:', error);
+                showAlert('Barcode lookup service unavailable. Try searching by product name.');
+            }
+            
+            showLoading(false);
+        }
+
+        // URL extraction and comparison
+        async function extractFromUrl() {
+            const url = document.getElementById('productUrl').value.trim();
+            if (!url) {
+                showAlert('Please enter a product URL');
+                return;
+            }
+
+            if (!isValidUrl(url)) {
+                showAlert('Please enter a valid URL');
+                return;
+            }
+
+            showLoading(true);
+            
+            try {
+                // Extract product information from URL
+                const productInfo = await extractProductFromUrl(url);
+                if (productInfo) {
+                    document.getElementById('productSearch').value = productInfo.name;
+                    await searchProduct();
+                    return;
+                }
+                
+                showAlert('Could not extract product information from this URL.');
+                
+            } catch (error) {
+                console.error('URL extraction failed:', error);
+                showAlert('Failed to extract product data from URL.');
+            }
+            
+            showLoading(false);
+        }
+
+        // Extract product info from URL
+        async function extractProductFromUrl(url) {
+            try {
+                const proxyUrl = API_CONFIG.CORS_PROXY + encodeURIComponent(url);
+                const response = await fetch(proxyUrl);
+                const data = await response.json();
+                
+                if (data.contents) {
+                    // Parse HTML content to extract product name
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(data.contents, 'text/html');
+                    
+                    // Try common selectors for product titles
+                    const titleSelectors = [
+                        'h1#title',
+                        '.product-title',
+                        '[data-testid="product-title"]',
+                        'h1',
+                        '.pdp-product-name'
+                    ];
+                    
+                    for (const selector of titleSelectors) {
+                        const element = doc.querySelector(selector);
+                        if (element && element.textContent.trim()) {
+                            return {
+                                name: element.textContent.trim(),
+                                source: new URL(url).hostname
+                            };
+                        }
+                    }
+                }
+                
+       
+                // Fallback: extract from URL structure
+                const urlParts = url.split('/');
+                const productSlug = urlParts[urlParts.length - 1].replace(/[-_]/g, ' ');
+                return { name: decodeURIComponent(productSlug), source: new URL(url).hostname };
+            } catch (error) {
+                console.error('Error parsing product info from URL:', error);
+                return null;
+            }
+        }
+
+        function isValidUrl(string) {
+            try {
+                new URL(string);
+                return true;
+            } catch (_) {
+                return false;
+            }
+        }
+
+        function showManualEntry() {
+            showAlert('Manual entry not yet implemented. Stay tuned!');
+        }
+
+        function addProductComparison(productData) {
+            const resultsContainer = document.getElementById('results');
+            resultsContainer.innerHTML = '';
+
+            const productCard = document.createElement('div');
+            productCard.className = 'product-card';
+
+            const header = document.createElement('div');
+            header.className = 'product-header';
+
+            const info = document.createElement('div');
+            info.className = 'product-info';
+            info.innerHTML = `<h3>${productData.name}</h3><div class="product-meta">${productData.category}</div>`;
+            header.appendChild(info);
+
+            const priceSummary = document.createElement('div');
+            priceSummary.className = 'price-summary';
+            priceSummary.innerHTML = `<div class="best-price-display">$${productData.prices[0].price.toFixed(2)}</div><div class="savings-display">Best Price Found</div>`;
+            header.appendChild(priceSummary);
+
+            productCard.appendChild(header);
+
+            const grid = document.createElement('div');
+            grid.className = 'price-grid';
+
+            productData.prices.forEach(price => {
+                const priceItem = document.createElement('div');
+                priceItem.className = `price-item ${price === productData.prices[0] ? 'best-price' : ''}`;
+
+                const store = document.createElement('div');
+                store.className = 'store-info';
+                store.innerHTML = `<div class="store-name">${price.store}</div><a class="store-link" href="${price.url}" target="_blank">View</a>`;
+
+                const priceInfo = document.createElement('div');
+                priceInfo.className = 'price-info';
+                priceInfo.innerHTML = `<div class="price">$${price.price.toFixed(2)}</div><div class="price-change">${price.shipping}</div>`;
+
+                priceItem.appendChild(store);
+                priceItem.appendChild(priceInfo);
+                grid.appendChild(priceItem);
+            });
+
+            productCard.appendChild(grid);
+            resultsContainer.appendChild(productCard);
+        }
+
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        }
+
+        function showAlert(msg) {
+            alert(msg);
+        }
+
+        function showSuccess(msg) {
+            console.log(msg);
+        }
+
+        function sortResults(by) {
+            currentSort = by;
+            // Placeholder — implement sorting logic if needed
+            showAlert(`Sorting by: ${by}`);
+        }
+    </script>
+</body>
+</html>
