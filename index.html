@@ -608,7 +608,7 @@
         const API_CONFIG = {
             // Real APIs that work (some require signup but have free tiers)
             RAPIDAPI_KEY: 'your_rapidapi_key', // Get from rapidapi.com
-            SERPAPI_KEY: '540d75c2d63054135309b1d343d7e37103c916812a3906e292b37d7867dd6284', // Get from serpapi.com (100 free searches/month)
+            SERPAPI_KEY: '540d75c2d63054135309b1d343d7e37103c916812a3906e292b37d7867dd6284', // SerpAPI key configured
             
             // Working proxy services
             CORS_PROXIES: [
@@ -663,7 +663,7 @@
                 const workingServices = tests.filter(test => test.status === 'fulfilled').length;
                 
                 if (workingServices > 0) {
-                    statusDiv.innerHTML = `✅ ${workingServices} data sources available`;
+                    statusDiv.innerHTML = `✅ ${workingServices} data sources available${apiConnections.serpapi ? ' (SerpAPI: Active)' : ''}`;
                     statusDiv.className = 'api-status';
                 } else {
                     statusDiv.innerHTML = '⚠️ Using demo data - some APIs may need configuration';
@@ -677,15 +677,20 @@
 
         async function testSerpApi() {
             // Test if SerpAPI is configured and working
-            if (!API_CONFIG.SERPAPI_KEY || API_CONFIG.SERPAPI_KEY === 'your_serpapi_key') {
-                throw new Error('SerpAPI not configured');
+            try {
+                const response = await fetch(`${API_CONFIG.ENDPOINTS.GOOGLE_SHOPPING}?api_key=${API_CONFIG.SERPAPI_KEY}&engine=google_shopping&q=test&num=1`);
+                if (!response.ok) throw new Error('SerpAPI test failed');
+                
+                const data = await response.json();
+                if (data.error) throw new Error(data.error);
+                
+                apiConnections.serpapi = true;
+                return true;
+            } catch (error) {
+                console.error('SerpAPI test error:', error);
+                apiConnections.serpapi = false;
+                return false;
             }
-            
-            const response = await fetch(`${API_CONFIG.ENDPOINTS.GOOGLE_SHOPPING}?api_key=${API_CONFIG.SERPAPI_KEY}&engine=google_shopping&q=test&num=1`);
-            if (!response.ok) throw new Error('SerpAPI test failed');
-            
-            apiConnections.serpapi = true;
-            return true;
         }
 
         async function testUpcDatabase() {
@@ -808,36 +813,63 @@
 
         async function searchWithSerpApi(query) {
             if (!apiConnections.serpapi) {
-                throw new Error('SerpAPI not available');
+                console.log('SerpAPI not available, skipping...');
+                return [];
             }
 
             try {
-                const url = `${API_CONFIG.ENDPOINTS.GOOGLE_SHOPPING}?api_key=${API_CONFIG.SERPAPI_KEY}&engine=google_shopping&q=${encodeURIComponent(query)}&num=10`;
+                const url = `${API_CONFIG.ENDPOINTS.GOOGLE_SHOPPING}?api_key=${API_CONFIG.SERPAPI_KEY}&engine=google_shopping&q=${encodeURIComponent(query)}&num=10&gl=us&hl=en`;
+                console.log('Fetching from SerpAPI:', query);
+                
                 const response = await fetch(url);
                 
                 if (!response.ok) {
-                    throw new Error('SerpAPI request failed');
+                    throw new Error(`SerpAPI HTTP error: ${response.status}`);
                 }
                 
                 const data = await response.json();
-                const results = [];
+                console.log('SerpAPI response:', data);
                 
-                if (data.shopping_results) {
-                    data.shopping_results.forEach(item => {
-                        if (item.price && item.source) {
-                            results.push({
-                                store: item.source,
-                                price: parseFloat(item.price.toString().replace(/[^0-9.]/g, '')),
-                                url: item.link || '#',
-                                availability: 'in-stock',
-                                shipping: item.shipping || 'varies',
-                                rating: item.rating || null
-                            });
-                        }
-                    });
+                if (data.error) {
+                    throw new Error(`SerpAPI error: ${data.error}`);
                 }
                 
-                return results.slice(0, 8);
+                const results = [];
+                
+                if (data.shopping_results && data.shopping_results.length > 0) {
+                    data.shopping_results.forEach(item => {
+                        if (item.price && item.source) {
+                            // Clean price - handle different formats
+                            let price = 0;
+                            if (typeof item.price === 'string') {
+                                price = parseFloat(item.price.replace(/[^0-9.]/g, ''));
+                            } else if (typeof item.price === 'number') {
+                                price = item.price;
+                            } else if (item.extracted_price) {
+                                price = parseFloat(item.extracted_price.toString().replace(/[^0-9.]/g, ''));
+                            }
+                            
+                            if (price > 0) {
+                                results.push({
+                                    store: item.source || 'Unknown Store',
+                                    price: price,
+                                    url: item.link || '#',
+                                    availability: 'in-stock',
+                                    shipping: item.shipping || (item.delivery ? item.delivery : 'varies'),
+                                    rating: item.rating || null,
+                                    title: item.title || query
+                                });
+                            }
+                        }
+                    });
+                    
+                    console.log(`SerpAPI found ${results.length} valid price results`);
+                    return results.slice(0, 8); // Limit to 8 results
+                } else {
+                    console.log('No shopping results found in SerpAPI response');
+                    return [];
+                }
+                
             } catch (error) {
                 console.error('SerpAPI search failed:', error);
                 return [];
