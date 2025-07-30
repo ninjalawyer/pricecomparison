@@ -612,10 +612,12 @@
             
             // Working proxy services
             CORS_PROXIES: [
-                'https://api.allorigins.win/raw?url=',
-                'https://cors-anywhere.herokuapp.com/',
-                'https://api.codetabs.com/v1/proxy?quest='
+                'https://api.allorigins.win/get?url=',
+                'https://api.codetabs.com/v1/proxy/?quest=',
+                'https://cors-anywhere.herokuapp.com/'
             ],
+            
+            WORKING_PROXY: null, // Will be set when a working proxy is found
             
             // API endpoints that work
             ENDPOINTS: {
@@ -663,10 +665,12 @@
                 const workingServices = tests.filter(test => test.status === 'fulfilled').length;
                 
                 if (workingServices > 0) {
-                    statusDiv.innerHTML = `✅ ${workingServices} data sources available${apiConnections.serpapi ? ' (SerpAPI: Active)' : ''}`;
+                    const serpStatus = apiConnections.serpapi ? ' (SerpAPI: Active)' : '';
+                    const proxyStatus = apiConnections.corsProxy ? ' (CORS Proxy: Active)' : '';
+                    statusDiv.innerHTML = `✅ ${workingServices} data sources available${serpStatus}${proxyStatus}`;
                     statusDiv.className = 'api-status';
                 } else {
-                    statusDiv.innerHTML = '⚠️ Using demo data - some APIs may need configuration';
+                    statusDiv.innerHTML = '⚠️ Running in demo mode - APIs blocked by CORS policy';
                     statusDiv.className = 'api-status warning';
                 }
             } catch (error) {
@@ -678,14 +682,56 @@
         async function testSerpApi() {
             // Test if SerpAPI is configured and working
             try {
-                const response = await fetch(`${API_CONFIG.ENDPOINTS.GOOGLE_SHOPPING}?api_key=${API_CONFIG.SERPAPI_KEY}&engine=google_shopping&q=test&num=1`);
-                if (!response.ok) throw new Error('SerpAPI test failed');
+                // Use CORS proxy for SerpAPI requests since direct fetch is blocked
+                const testUrl = `${API_CONFIG.ENDPOINTS.GOOGLE_SHOPPING}?api_key=${API_CONFIG.SERPAPI_KEY}&engine=google_shopping&q=test&num=1`;
                 
-                const data = await response.json();
-                if (data.error) throw new Error(data.error);
+                // Try direct request first (might work in some environments)
+                try {
+                    const directResponse = await fetch(testUrl);
+                    if (directResponse.ok) {
+                        const data = await directResponse.json();
+                        if (!data.error) {
+                            apiConnections.serpapi = true;
+                            console.log('SerpAPI direct connection successful');
+                            return true;
+                        }
+                    }
+                } catch (directError) {
+                    console.log('Direct SerpAPI connection failed, trying proxy...');
+                }
                 
-                apiConnections.serpapi = true;
-                return true;
+                // If direct fails, try through CORS proxy
+                if (API_CONFIG.WORKING_PROXY) {
+                    const proxyUrl = API_CONFIG.WORKING_PROXY + encodeURIComponent(testUrl);
+                    const response = await fetch(proxyUrl);
+                    
+                    if (response.ok) {
+                        let data = await response.text();
+                        
+                        // Handle allorigins.win response format
+                        if (API_CONFIG.WORKING_PROXY.includes('allorigins.win')) {
+                            try {
+                                const jsonResponse = JSON.parse(data);
+                                data = jsonResponse.contents;
+                            } catch (e) {
+                                // If it's not JSON, use as-is
+                            }
+                        }
+                        
+                        const serpData = JSON.parse(data);
+                        if (!serpData.error) {
+                            apiConnections.serpapi = true;
+                            console.log('SerpAPI proxy connection successful');
+                            return true;
+                        }
+                    }
+                }
+                
+                // If both fail, mark as unavailable but don't throw error
+                console.log('SerpAPI unavailable - will use fallback data');
+                apiConnections.serpapi = false;
+                return false;
+                
             } catch (error) {
                 console.error('SerpAPI test error:', error);
                 apiConnections.serpapi = false;
@@ -705,13 +751,34 @@
         }
 
         async function testCorsProxy() {
-            try {
-                const response = await fetch(`${API_CONFIG.CORS_PROXIES[0]}https://httpbin.org/json`);
-                apiConnections.corsProxy = response.ok;
-                return response.ok;
-            } catch (error) {
-                return false;
+            // Test multiple CORS proxies to find one that works
+            for (let i = 0; i < API_CONFIG.CORS_PROXIES.length; i++) {
+                try {
+                    const proxy = API_CONFIG.CORS_PROXIES[i];
+                    const testUrl = proxy + encodeURIComponent('https://httpbin.org/json');
+                    
+                    const response = await fetch(testUrl, {
+                        method: 'GET',
+                        headers: {
+                            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                        },
+                        timeout: 5000
+                    });
+                    
+                    if (response.ok) {
+                        // Store the working proxy
+                        API_CONFIG.WORKING_PROXY = proxy;
+                        apiConnections.corsProxy = true;
+                        console.log(`Working CORS proxy found: ${proxy}`);
+                        return true;
+                    }
+                } catch (error) {
+                    console.log(`CORS proxy ${i + 1} failed:`, error.message);
+                }
             }
+            
+            apiConnections.corsProxy = false;
+            return false;
         }
 
         function switchMethod(method) {
@@ -821,14 +888,47 @@
                 const url = `${API_CONFIG.ENDPOINTS.GOOGLE_SHOPPING}?api_key=${API_CONFIG.SERPAPI_KEY}&engine=google_shopping&q=${encodeURIComponent(query)}&num=10&gl=us&hl=en`;
                 console.log('Fetching from SerpAPI:', query);
                 
-                const response = await fetch(url);
+                let response, data;
                 
-                if (!response.ok) {
-                    throw new Error(`SerpAPI HTTP error: ${response.status}`);
+                // Try direct request first
+                try {
+                    response = await fetch(url);
+                    if (response.ok) {
+                        data = await response.json();
+                    } else {
+                        throw new Error('Direct request failed');
+                    }
+                } catch (directError) {
+                    console.log('Direct SerpAPI request failed, trying proxy...');
+                    
+                    // Try through CORS proxy
+                    if (!API_CONFIG.WORKING_PROXY) {
+                        throw new Error('No working CORS proxy available');
+                    }
+                    
+                    const proxyUrl = API_CONFIG.WORKING_PROXY + encodeURIComponent(url);
+                    response = await fetch(proxyUrl);
+                    
+                    if (!response.ok) {
+                        throw new Error(`Proxy request failed: ${response.status}`);
+                    }
+                    
+                    let responseText = await response.text();
+                    
+                    // Handle allorigins.win response format
+                    if (API_CONFIG.WORKING_PROXY.includes('allorigins.win')) {
+                        try {
+                            const jsonResponse = JSON.parse(responseText);
+                            responseText = jsonResponse.contents;
+                        } catch (e) {
+                            // If it's not JSON, use as-is
+                        }
+                    }
+                    
+                    data = JSON.parse(responseText);
                 }
                 
-                const data = await response.json();
-                console.log('SerpAPI response:', data);
+                console.log('SerpAPI response received');
                 
                 if (data.error) {
                     throw new Error(`SerpAPI error: ${data.error}`);
@@ -850,14 +950,36 @@
                             }
                             
                             if (price > 0) {
+                                // Process the URL to make it work better
+                                let productUrl = item.link || '#';
+                                
+                                // Try to extract the actual retailer URL from Google's redirect
+                                if (productUrl.includes('google.com') && productUrl.includes('url=')) {
+                                    try {
+                                        const urlParams = new URLSearchParams(productUrl.split('?')[1]);
+                                        const actualUrl = urlParams.get('url') || urlParams.get('q');
+                                        if (actualUrl) {
+                                            productUrl = decodeURIComponent(actualUrl);
+                                        }
+                                    } catch (e) {
+                                        console.log('Could not extract URL from Google redirect');
+                                    }
+                                }
+                                
+                                // If still no good URL, create search URL for the store
+                                if (productUrl === '#' || productUrl.includes('google.com')) {
+                                    productUrl = createStoreSearchUrl(item.source, query);
+                                }
+                                
                                 results.push({
                                     store: item.source || 'Unknown Store',
                                     price: price,
-                                    url: item.link || '#',
+                                    url: productUrl,
                                     availability: 'in-stock',
                                     shipping: item.shipping || (item.delivery ? item.delivery : 'varies'),
                                     rating: item.rating || null,
-                                    title: item.title || query
+                                    title: item.title || query,
+                                    serpapi_link: item.link // Keep original for debugging
                                 });
                             }
                         }
@@ -872,8 +994,45 @@
                 
             } catch (error) {
                 console.error('SerpAPI search failed:', error);
+                // Mark SerpAPI as unavailable for this session
+                apiConnections.serpapi = false;
                 return [];
             }
+        }
+
+        function createStoreSearchUrl(storeName, query) {
+            const storeUrls = {
+                'Amazon': `https://www.amazon.com/s?k=${encodeURIComponent(query)}`,
+                'Amazon.com': `https://www.amazon.com/s?k=${encodeURIComponent(query)}`,
+                'eBay': `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(query)}`,
+                'Walmart': `https://www.walmart.com/search/?query=${encodeURIComponent(query)}`,
+                'Best Buy': `https://www.bestbuy.com/site/searchpage.jsp?st=${encodeURIComponent(query)}`,
+                'Target': `https://www.target.com/s?searchTerm=${encodeURIComponent(query)}`,
+                'Newegg': `https://www.newegg.com/p/pl?d=${encodeURIComponent(query)}`,
+                'B&H': `https://www.bhphotovideo.com/c/search?Ntt=${encodeURIComponent(query)}`,
+                'Costco': `https://www.costco.com/CatalogSearch?keyword=${encodeURIComponent(query)}`,
+                'Home Depot': `https://www.homedepot.com/s/${encodeURIComponent(query)}`,
+                'Lowe\'s': `https://www.lowes.com/search?searchTerm=${encodeURIComponent(query)}`,
+                'Macy\'s': `https://www.macys.com/shop/search?keyword=${encodeURIComponent(query)}`,
+                'Overstock': `https://www.overstock.com/search?keywords=${encodeURIComponent(query)}`,
+                'Wayfair': `https://www.wayfair.com/keyword.php?keyword=${encodeURIComponent(query)}`
+            };
+            
+            // Try exact match first
+            if (storeUrls[storeName]) {
+                return storeUrls[storeName];
+            }
+            
+            // Try partial match
+            for (const [store, url] of Object.entries(storeUrls)) {
+                if (storeName.toLowerCase().includes(store.toLowerCase()) || 
+                    store.toLowerCase().includes(storeName.toLowerCase())) {
+                    return url;
+                }
+            }
+            
+            // Default: create a Google search for the store + product
+            return `https://www.google.com/search?q=${encodeURIComponent(storeName + ' ' + query)}`;
         }
 
         async function searchWithWebScraping(query) {
@@ -1099,91 +1258,230 @@
             showLoading(true);
             
             try {
+                // First try to extract product name from URL structure
+                const quickExtraction = extractProductNameFromUrl(url);
+                if (quickExtraction) {
+                    document.getElementById('productSearch').value = quickExtraction;
+                    showNotification(`Extracted: ${quickExtraction}`, 'success');
+                    await searchProduct();
+                    showLoading(false);
+                    return;
+                }
+                
+                // If quick extraction fails, try web scraping
                 const productInfo = await extractProductFromUrl(url);
                 if (productInfo && productInfo.name) {
                     document.getElementById('productSearch').value = productInfo.name;
                     await searchProduct();
                     showNotification(`Extracted: ${productInfo.name}`, 'success');
                 } else {
-                    showNotification('Could not extract product information from this URL.', 'warning');
+                    // Final fallback - use domain name + "product"
+                    const domain = new URL(url).hostname.replace('www.', '');
+                    const fallbackName = `${domain} product`;
+                    document.getElementById('productSearch').value = fallbackName;
+                    showNotification(`Using fallback search: ${fallbackName}`, 'warning');
+                    await searchProduct();
                 }
             } catch (error) {
                 console.error('URL extraction failed:', error);
-                showNotification('Failed to extract product data from URL.', 'error');
+                
+                // Ultimate fallback - extract from URL path
+                try {
+                    const fallbackName = extractProductNameFromUrl(url) || 'Product from URL';
+                    document.getElementById('productSearch').value = fallbackName;
+                    showNotification(`Using URL-based extraction: ${fallbackName}`, 'warning');
+                    await searchProduct();
+                } catch (fallbackError) {
+                    showNotification('Could not extract product from URL. Please search manually.', 'error');
+                }
             }
             
             showLoading(false);
         }
 
+        function extractProductNameFromUrl(url) {
+            try {
+                const urlObj = new URL(url);
+                const pathname = urlObj.pathname;
+                const hostname = urlObj.hostname;
+                
+                // Common URL patterns for different sites
+                let productName = '';
+                
+                // Amazon patterns
+                if (hostname.includes('amazon')) {
+                    const dpMatch = pathname.match(/\/dp\/[A-Z0-9]+/);
+                    if (dpMatch) {
+                        // Look for product name in URL path before /dp/
+                        const beforeDp = pathname.split('/dp/')[0];
+                        const segments = beforeDp.split('/').filter(s => s.length > 0);
+                        productName = segments[segments.length - 1];
+                    }
+                }
+                
+                // eBay patterns
+                else if (hostname.includes('ebay')) {
+                    const segments = pathname.split('/').filter(s => s.length > 0);
+                    if (segments.length > 1) {
+                        productName = segments[1]; // Usually the second segment
+                    }
+                }
+                
+                // Best Buy patterns
+                else if (hostname.includes('bestbuy')) {
+                    const segments = pathname.split('/').filter(s => s.length > 0);
+                    productName = segments[segments.length - 1];
+                }
+                
+                // Walmart patterns
+                else if (hostname.includes('walmart')) {
+                    const segments = pathname.split('/').filter(s => s.length > 0);
+                    productName = segments[segments.length - 1];
+                }
+                
+                // Generic fallback - use last meaningful segment
+                else {
+                    const segments = pathname.split('/').filter(s => s.length > 3);
+                    productName = segments[segments.length - 1] || segments[segments.length - 2] || '';
+                }
+                
+                if (productName) {
+                    // Clean up the product name
+                    productName = productName
+                        .replace(/[-_]/g, ' ')
+                        .replace(/\+/g, ' ')
+                        .replace(/%20/g, ' ')
+                        .replace(/[^\w\s]/g, ' ')
+                        .replace(/\s+/g, ' ')
+                        .trim();
+                    
+                    // Remove common URL artifacts
+                    productName = productName
+                        .replace(/\b(html|htm|php|jsp|asp)\b/gi, '')
+                        .replace(/\b\d{8,}\b/g, '') // Remove long numbers (IDs)
+                        .replace(/\s+/g, ' ')
+                        .trim();
+                    
+                    if (productName.length > 3) {
+                        return productName;
+                    }
+                }
+                
+                return null;
+            } catch (error) {
+                console.error('Error extracting from URL structure:', error);
+                return null;
+            }
+        }
+
         async function extractProductFromUrl(url) {
             try {
-                if (!apiConnections.corsProxy) {
+                // Only try web scraping if CORS proxy is available
+                if (!apiConnections.corsProxy || !API_CONFIG.WORKING_PROXY) {
                     throw new Error('CORS proxy not available');
                 }
                 
-                const proxyUrl = API_CONFIG.CORS_PROXIES[0] + encodeURIComponent(url);
+                const proxyUrl = API_CONFIG.WORKING_PROXY + encodeURIComponent(url);
+                console.log('Attempting to fetch URL via proxy:', proxyUrl);
+                
                 const response = await fetch(proxyUrl, {
+                    method: 'GET',
                     headers: {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                    }
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                        'Accept-Language': 'en-US,en;q=0.5',
+                        'Cache-Control': 'no-cache'
+                    },
+                    timeout: 10000
                 });
                 
                 if (!response.ok) {
-                    throw new Error('Failed to fetch URL');
+                    throw new Error(`Failed to fetch URL: ${response.status}`);
                 }
                 
-                const html = await response.text();
+                let html = await response.text();
+                
+                // Handle allorigins.win response format
+                if (API_CONFIG.WORKING_PROXY.includes('allorigins.win')) {
+                    try {
+                        const jsonResponse = JSON.parse(html);
+                        html = jsonResponse.contents;
+                    } catch (e) {
+                        // If it's not JSON, use as-is
+                    }
+                }
+                
                 const parser = new DOMParser();
                 const doc = parser.parseFromString(html, 'text/html');
                 
                 // Try multiple selectors for product titles
                 const titleSelectors = [
+                    '#productTitle', // Amazon
                     'h1#title',
                     '.product-title',
                     '[data-testid="product-title"]',
-                    'h1',
-                    '.pdp-product-name',
+                    'h1.it-ttl', // eBay
                     '.product-name',
-                    '[data-automation-id="product-title"]'
+                    '.pdp-product-name',
+                    '[data-automation-id="product-title"]',
+                    '.sr-only', // Screen reader text often contains product names
+                    'h1',
+                    '.item-title'
                 ];
                 
                 for (const selector of titleSelectors) {
-                    const element = doc.querySelector(selector);
-                    if (element && element.textContent.trim()) {
-                        return {
-                            name: cleanProductName(element.textContent.trim()),
-                            source: new URL(url).hostname
-                        };
+                    const elements = doc.querySelectorAll(selector);
+                    for (const element of elements) {
+                        if (element && element.textContent.trim()) {
+                            const title = cleanProductName(element.textContent.trim());
+                            if (title.length > 5) { // Ensure meaningful title
+                                return {
+                                    name: title,
+                                    source: new URL(url).hostname
+                                };
+                            }
+                        }
                     }
                 }
                 
                 // Try meta tags
-                const metaTitle = doc.querySelector('meta[property="og:title"]') || 
-                                doc.querySelector('meta[name="title"]');
-                if (metaTitle && metaTitle.content) {
-                    return {
-                        name: cleanProductName(metaTitle.content),
-                        source: new URL(url).hostname
-                    };
+                const metaTags = [
+                    'meta[property="og:title"]',
+                    'meta[name="title"]',
+                    'meta[property="twitter:title"]',
+                    'meta[name="description"]'
+                ];
+                
+                for (const selector of metaTags) {
+                    const meta = doc.querySelector(selector);
+                    if (meta && meta.content) {
+                        const title = cleanProductName(meta.content);
+                        if (title.length > 5) {
+                            return {
+                                name: title,
+                                source: new URL(url).hostname
+                            };
+                        }
+                    }
                 }
                 
-                // Fallback: extract from URL
-                const urlPath = new URL(url).pathname;
-                const segments = urlPath.split('/').filter(s => s.length > 0);
-                const productSegment = segments[segments.length - 1] || segments[segments.length - 2];
-                
-                if (productSegment) {
-                    return {
-                        name: cleanProductName(productSegment.replace(/[-_]/g, ' ')),
-                        source: new URL(url).hostname
-                    };
+                // Try title tag
+                const titleTag = doc.querySelector('title');
+                if (titleTag && titleTag.textContent) {
+                    const title = cleanProductName(titleTag.textContent);
+                    if (title.length > 5) {
+                        return {
+                            name: title,
+                            source: new URL(url).hostname
+                        };
+                    }
                 }
                 
                 return null;
                 
             } catch (error) {
                 console.error('Error extracting product info:', error);
-                return null;
+                throw error;
             }
         }
 
@@ -1283,7 +1581,9 @@
                 store.className = 'store-info';
                 store.innerHTML = `
                     <div class="store-name">${price.store}</div>
-                    <a class="store-link" href="${price.url}" target="_blank" rel="noopener">View Product</a>
+                    <a class="store-link" href="${price.url}" target="_blank" rel="noopener noreferrer">
+                        ${price.url.includes('google.com') ? 'Search Store' : 'View Product'}
+                    </a>
                 `;
 
                 const priceInfo = document.createElement('div');
@@ -1298,9 +1598,17 @@
                 priceItem.appendChild(priceInfo);
                 
                 // Add click handler to open product page
-                priceItem.addEventListener('click', () => {
+                priceItem.addEventListener('click', (e) => {
+                    // Don't trigger if clicking on the link directly
+                    if (e.target.tagName === 'A') return;
+                    
                     if (price.url !== '#') {
-                        window.open(price.url, '_blank');
+                        // Add some feedback
+                        priceItem.style.transform = 'scale(0.98)';
+                        setTimeout(() => {
+                            priceItem.style.transform = '';
+                            window.open(price.url, '_blank', 'noopener,noreferrer');
+                        }, 100);
                     }
                 });
                 
